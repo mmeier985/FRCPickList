@@ -1,0 +1,28 @@
+name: picklist_app
+description: Collaborative FRC pick list app for alliance selection.
+publish_to: "none"
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cloud_firestore: ^6.4.1
+  csv: ^6.0.0
+  file_picker: ^10.2.0
+  firebase_auth: ^6.1.0
+  firebase_core: ^4.9.0
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  provider: ^6.1.5
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

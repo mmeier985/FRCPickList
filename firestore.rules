@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return signedIn() && request.auth.token.role == role;
+    }
+
+    function hasAnyRole(roles) {
+      return signedIn() && request.auth.token.role in roles;
+    }
+
+    function inWorkspaceTeamOrg(teamOrgId) {
+      return signedIn() && request.auth.token.teamOrgId == teamOrgId;
+    }
+
+    function hasWorkspaceAccess(data) {
+      return signedIn() && (
+        data.memberIds.hasAny([request.auth.uid]) ||
+        data.workspace.teamOrgId == request.auth.token.teamOrgId
+      );
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /workspaces/{workspaceId} {
+      allow read: if hasWorkspaceAccess(resource.data);
+      allow create: if signedIn() && request.resource.data.workspace.teamOrgId == request.auth.token.teamOrgId;
+      allow update: if hasWorkspaceAccess(resource.data) && hasAnyRole(['strategist', 'lead']);
+      allow delete: if hasRole('lead');
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
