@@ -38,3 +38,31 @@ flutter run -d chrome \
   --dart-define=FIREBASE_TEAM_ORG_ID=team-4414 \
   --dart-define=FIREBASE_DEFAULT_ROLE=strategist
 ```
+
+## Firebase deployment
+
+This repo now includes a starter `firebase.json` that wires Firestore rules and Firebase Hosting to the Flutter web build output.
+
+Before deploying:
+
+1. Build the web app:
+   - `flutter build web`
+2. Point Firebase at your project:
+   - `firebase use <your-project-id>`
+3. Deploy hosting and rules:
+   - `firebase deploy`
+
+If you want to validate the hosted build locally first:
+
+1. Build the app:
+   - `flutter build web`
+2. Start the Firebase emulators:
+   - `firebase emulators:start --only hosting,firestore`
+
+## v1 release checklist
+
+- Confirm `users/{uid}` profile docs exist for the people testing the workspace.
+- Verify the Firestore rules are deployed and block cross-workspace edits.
+- Import one real event CSV or JSON file and confirm duplicate rows show warnings.
+- Run the app in Chrome and check that save states move through `syncing`, `saved`, and `failed`.
+- Do one drag-and-drop pass between the master list and a bucket after a refresh.
