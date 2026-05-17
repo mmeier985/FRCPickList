@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'services/app_bootstrap.dart';
 import 'state/picklist_controller.dart';
 import 'ui/screens/event_list_screen.dart';
+import 'ui/screens/sign_in_screen.dart';
 import 'ui/screens/workspace_screen.dart';
 
 class ProviderScope extends StatelessWidget {
@@ -66,11 +67,13 @@ class _AppFrame extends StatelessWidget {
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
-      child: selectedWorkspace == null
-          ? const EventListScreen(key: ValueKey('events'))
-          : WorkspaceScreen(
-              key: ValueKey(selectedWorkspace.workspace.id),
-            ),
+      child: controller.user == null
+          ? const SignInScreen(key: ValueKey('sign-in'))
+          : selectedWorkspace == null
+              ? const EventListScreen(key: ValueKey('events'))
+              : WorkspaceScreen(
+                  key: ValueKey(selectedWorkspace.workspace.id),
+                ),
     );
   }
 }

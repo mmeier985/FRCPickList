@@ -24,7 +24,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     final orderedTeams = _orderedTeams(workspace);
     final selectedTeam = _selectedTeamId == null ? null : workspace.teamById(_selectedTeamId!);
-    final buckets = workspace.buckets;
     final canEdit = controller.canEditBoard;
 
     return Scaffold(
@@ -35,6 +34,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               workspace: workspace.workspace,
               onClose: controller.closeWorkspace,
               onImport: () => controller.importWorkspaceFile(workspace.workspace.id),
+              onAddTeam: controller.canEditBoard ? () => _showAddTeamDialog(context, controller, workspace) : null,
               onAdmin: controller.canManageWorkspace ? () => _showAdminDialog(context, controller, workspace) : null,
               canEdit: controller.canEditBoard,
               canManage: controller.canManageWorkspace,
@@ -51,19 +51,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   final board = isWide
                       ? Row(
                           children: [
-                            Expanded(flex: 4, child: _MasterRankingColumn(teams: orderedTeams, workspaceId: workspace.workspace.id, onSelect: _selectTeam, onReorder: controller.reorderMasterList, canEdit: canEdit, onRemoveFromBucket: controller.removeTeamFromBucket)),
+                            Expanded(flex: 5, child: _MasterRankingColumn(teams: orderedTeams, workspaceId: workspace.workspace.id, onSelect: _selectTeam, onReorder: controller.reorderMasterList, canEdit: canEdit)),
                             const SizedBox(width: 16),
-                            Expanded(flex: 3, child: _BucketsColumn(buckets: buckets, workspace: workspace, onSelectTeam: _selectTeam, onMoveToBucket: controller.moveTeamToBucket, onReorderBucket: controller.reorderBucketTeams, onMoveBetweenBuckets: controller.moveTeamBetweenBuckets, canEdit: canEdit)),
-                            const SizedBox(width: 16),
-                            Expanded(flex: 3, child: _TeamDetailsPanel(team: selectedTeam, workspaceId: workspace.workspace.id, onAvailabilityChanged: controller.updateAvailability, onAddNote: controller.addNote)),
+                            Expanded(flex: 4, child: _TeamDetailsPanel(team: selectedTeam, workspaceId: workspace.workspace.id, onAvailabilityChanged: controller.updateAvailability, onAddNote: controller.addNote)),
                           ],
                         )
                       : ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
-                            _MasterRankingColumn(teams: orderedTeams, workspaceId: workspace.workspace.id, onSelect: _selectTeam, onReorder: controller.reorderMasterList, canEdit: canEdit, onRemoveFromBucket: controller.removeTeamFromBucket),
-                            const SizedBox(height: 16),
-                            _BucketsColumn(buckets: buckets, workspace: workspace, onSelectTeam: _selectTeam, onMoveToBucket: controller.moveTeamToBucket, onReorderBucket: controller.reorderBucketTeams, onMoveBetweenBuckets: controller.moveTeamBetweenBuckets, canEdit: canEdit),
+                            _MasterRankingColumn(teams: orderedTeams, workspaceId: workspace.workspace.id, onSelect: _selectTeam, onReorder: controller.reorderMasterList, canEdit: canEdit),
                             const SizedBox(height: 16),
                             _TeamDetailsPanel(team: selectedTeam, workspaceId: workspace.workspace.id, onAvailabilityChanged: controller.updateAvailability, onAddNote: controller.addNote),
                           ],
@@ -190,6 +186,69 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
   }
 
+  Future<void> _showAddTeamDialog(
+    BuildContext context,
+    PickListController controller,
+    WorkspaceState workspace,
+  ) async {
+    final teamNumberController = TextEditingController();
+    final nicknameController = TextEditingController();
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Add team'),
+            content: SizedBox(
+              width: 460,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: teamNumberController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Team number'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nicknameController,
+                    decoration: const InputDecoration(labelText: 'Nickname'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final number = int.tryParse(teamNumberController.text.trim());
+                  final nickname = nicknameController.text.trim();
+                  if (number == null || nickname.isEmpty) return;
+                  await controller.createTeam(
+                    workspace.workspace.id,
+                    teamNumber: number,
+                    nickname: nickname,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                },
+                child: const Text('Add team'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      teamNumberController.dispose();
+      nicknameController.dispose();
+    }
+  }
+
   List<TeamCard> _orderedTeams(WorkspaceState workspace) {
     final map = {for (final team in workspace.teams) team.id: team};
     return workspace.rankings
@@ -204,6 +263,7 @@ class _TopBar extends StatelessWidget {
     required this.workspace,
     required this.onClose,
     required this.onImport,
+    required this.onAddTeam,
     required this.onAdmin,
     required this.canEdit,
     required this.canManage,
@@ -217,6 +277,7 @@ class _TopBar extends StatelessWidget {
   final EventWorkspace workspace;
   final VoidCallback onClose;
   final VoidCallback onImport;
+  final VoidCallback? onAddTeam;
   final VoidCallback? onAdmin;
   final bool canEdit;
   final bool canManage;
@@ -249,6 +310,12 @@ class _TopBar extends StatelessWidget {
                 icon: const Icon(Icons.upload_file),
                 label: const Text('Import'),
               ),
+              if (canEdit)
+                OutlinedButton.icon(
+                  onPressed: onAddTeam,
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('Add team'),
+                ),
               if (canManage)
                 FilledButton.icon(
                   onPressed: onAdmin,
@@ -270,7 +337,8 @@ class _TopBar extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(workspace.name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-                        Text('${workspace.status.name.toUpperCase()} | $memberCount members | ${canEdit ? 'edit enabled' : 'view only'}', style: const TextStyle(color: Colors.white70)),
+                        const SizedBox(height: 4),
+                        Text('${workspace.status.name.toUpperCase()} · $memberCount members · ${canEdit ? 'edit enabled' : 'view only'}', style: const TextStyle(color: Colors.white70)),
                       ],
                     ),
                     const Spacer(),
@@ -282,7 +350,7 @@ class _TopBar extends StatelessWidget {
                   children: [
                     Text(workspace.name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
                     const SizedBox(height: 4),
-                    Text('${workspace.status.name.toUpperCase()} | $memberCount members | ${canEdit ? 'edit enabled' : 'view only'}', style: const TextStyle(color: Colors.white70)),
+                    Text('${workspace.status.name.toUpperCase()} · $memberCount members · ${canEdit ? 'edit enabled' : 'view only'}', style: const TextStyle(color: Colors.white70)),
                     const SizedBox(height: 12),
                     actions,
                   ],
@@ -341,7 +409,6 @@ class _MasterRankingColumn extends StatelessWidget {
     required this.onSelect,
     required this.onReorder,
     required this.canEdit,
-    required this.onRemoveFromBucket,
   });
 
   final List<TeamCard> teams;
@@ -349,7 +416,6 @@ class _MasterRankingColumn extends StatelessWidget {
   final void Function(String teamId) onSelect;
   final Future<void> Function(String workspaceId, List<String> orderedTeamIds) onReorder;
   final bool canEdit;
-  final Future<void> Function(String workspaceId, String bucketId, String teamId) onRemoveFromBucket;
 
   @override
   Widget build(BuildContext context) {
@@ -359,11 +425,22 @@ class _MasterRankingColumn extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Master Ranking', style: Theme.of(context).textTheme.headlineSmall),
+            Row(
+              children: [
+                Text('Master Ranking', style: Theme.of(context).textTheme.headlineSmall),
+                const Spacer(),
+                Text('${teams.length} teams', style: const TextStyle(color: Colors.white60)),
+              ],
+            ),
             const SizedBox(height: 8),
-            Text('Canonical order for alliance selection.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70)),
+            Text('Drag to reorder the canonical alliance selection list.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70)),
             const SizedBox(height: 12),
-            if (!canEdit)
+            if (teams.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('No teams imported yet.', style: TextStyle(color: Colors.white54)),
+              )
+            else if (!canEdit)
               ...[
                 for (var index = 0; index < teams.length; index++)
                   Padding(
@@ -372,78 +449,31 @@ class _MasterRankingColumn extends StatelessWidget {
                   ),
               ]
             else
-              ...[
-                DragTarget<_DraggedTeam>(
-                  onAcceptWithDetails: (details) => _handleMasterDrop(
-                    payload: details.data,
-                    teams: teams,
-                    targetIndex: 0,
-                    onReorder: onReorder,
-                    onRemoveFromBucket: onRemoveFromBucket,
-                    workspaceId: workspaceId,
-                  ),
-                  builder: (context, candidateData, rejectedData) {
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      height: 28,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: candidateData.isNotEmpty ? const Color(0xFF17304F) : const Color(0xFF0B1523),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: candidateData.isNotEmpty ? Colors.lightBlueAccent : Colors.white10),
-                      ),
-                      child: Text(
-                        candidateData.isNotEmpty ? 'Drop to move to top' : 'Drop shortlist items here to return them to master',
-                        style: const TextStyle(color: Colors.white60, fontSize: 12),
-                      ),
-                    );
-                  },
-                ),
-                for (var index = 0; index < teams.length; index++)
-                  _RankingDropRow(
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: teams.length,
+                onReorder: (oldIndex, newIndex) async {
+                  final adjustedIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+                  final ids = teams.map((team) => team.id).toList(growable: true);
+                  final moving = ids.removeAt(oldIndex);
+                  ids.insert(adjustedIndex, moving);
+                  await onReorder(workspaceId, ids);
+                },
+                itemBuilder: (context, index) {
+                  return Padding(
                     key: ValueKey(teams[index].id),
-                    team: teams[index],
-                    rank: index + 1,
-                    canEdit: canEdit,
-                    onSelect: () => onSelect(teams[index].id),
-                    onDrop: (payload) => _handleMasterDrop(
-                      payload: payload,
-                      teams: teams,
-                      targetIndex: index,
-                      onReorder: onReorder,
-                      onRemoveFromBucket: onRemoveFromBucket,
-                      workspaceId: workspaceId,
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _ReorderableTeamTile(
+                      team: teams[index],
+                      rank: index + 1,
+                      onSelect: () => onSelect(teams[index].id),
+                      dragIndex: index,
                     ),
-                  ),
-                DragTarget<_DraggedTeam>(
-                  onAcceptWithDetails: (details) => _handleMasterDrop(
-                    payload: details.data,
-                    teams: teams,
-                    targetIndex: teams.length,
-                    onReorder: onReorder,
-                    onRemoveFromBucket: onRemoveFromBucket,
-                    workspaceId: workspaceId,
-                  ),
-                  builder: (context, candidateData, rejectedData) {
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      height: 28,
-                      margin: const EdgeInsets.only(top: 2),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: candidateData.isNotEmpty ? const Color(0xFF17304F) : const Color(0xFF0B1523),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: candidateData.isNotEmpty ? Colors.lightBlueAccent : Colors.white10),
-                      ),
-                      child: Text(
-                        candidateData.isNotEmpty ? 'Drop to place at bottom' : 'Drop here to place at bottom',
-                        style: const TextStyle(color: Colors.white60, fontSize: 12),
-                      ),
-                    );
-                  },
-                ),
-              ],
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -451,168 +481,41 @@ class _MasterRankingColumn extends StatelessWidget {
   }
 }
 
-class _BucketsColumn extends StatelessWidget {
-  const _BucketsColumn({
-    required this.buckets,
-    required this.workspace,
-    required this.onSelectTeam,
-    required this.onMoveToBucket,
-    required this.onReorderBucket,
-    required this.onMoveBetweenBuckets,
-    required this.canEdit,
+class _ReorderableTeamTile extends StatelessWidget {
+  const _ReorderableTeamTile({
+    required this.team,
+    required this.rank,
+    required this.onSelect,
+    required this.dragIndex,
   });
 
-  final List<StrategyBucket> buckets;
-  final WorkspaceState workspace;
-  final void Function(String teamId) onSelectTeam;
-  final Future<void> Function(String workspaceId, StrategyBucket bucket, String teamId) onMoveToBucket;
-  final Future<void> Function(String workspaceId, StrategyBucket bucket, List<String> orderedTeamIds) onReorderBucket;
-  final Future<void> Function(String workspaceId, String sourceBucketId, String destinationBucketId, String teamId) onMoveBetweenBuckets;
-  final bool canEdit;
+  final TeamCard team;
+  final int rank;
+  final VoidCallback onSelect;
+  final int dragIndex;
 
   @override
   Widget build(BuildContext context) {
-    final teamMap = {for (final team in workspace.teams) team.id: team};
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Strategy Buckets', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text('Shortlists and special-purpose views.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70)),
-            const SizedBox(height: 12),
-            ...buckets.map(
-              (bucket) => Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: _BucketCard(
-                  bucket: bucket,
-                  teams: bucket.teamIds.map((teamId) => teamMap[teamId]).whereType<TeamCard>().toList(growable: false),
-                  onSelectTeam: onSelectTeam,
-                  onDropTeam: (teamId) => onMoveToBucket(workspace.workspace.id, bucket, teamId),
-                  onReorderTeams: (orderedTeamIds) => onReorderBucket(workspace.workspace.id, bucket, orderedTeamIds),
-                  onMoveBetweenBuckets: (sourceBucketId, teamId) => onMoveBetweenBuckets(workspace.workspace.id, sourceBucketId, bucket.id, teamId),
-                  canEdit: canEdit,
-                ),
-              ),
-            ),
-          ],
+    return Stack(
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onSelect,
+          child: _TeamTile(team: team, rank: rank),
         ),
-      ),
-    );
-  }
-}
-
-class _BucketCard extends StatelessWidget {
-  const _BucketCard({
-    required this.bucket,
-    required this.teams,
-    required this.onSelectTeam,
-    required this.onDropTeam,
-    required this.onReorderTeams,
-    required this.onMoveBetweenBuckets,
-    required this.canEdit,
-  });
-
-  final StrategyBucket bucket;
-  final List<TeamCard> teams;
-  final void Function(String teamId) onSelectTeam;
-  final Future<void> Function(String teamId) onDropTeam;
-  final Future<void> Function(List<String> orderedTeamIds) onReorderTeams;
-  final Future<void> Function(String sourceBucketId, String teamId) onMoveBetweenBuckets;
-  final bool canEdit;
-
-  @override
-  Widget build(BuildContext context) {
-    Future<void> placeAtIndex(_DraggedTeam payload, int index) async {
-      if (payload.sourceBucketId == bucket.id) {
-        await onReorderTeams(_reorderIds(teams, payload.teamId, index));
-        return;
-      }
-
-      if (payload.sourceBucketId == null) {
-        await onDropTeam(payload.teamId);
-      } else {
-        await onMoveBetweenBuckets(payload.sourceBucketId!, payload.teamId);
-      }
-
-      final ids = teams.map((team) => team.id).toList(growable: true);
-      final insertIndex = index < 0
-          ? 0
-          : index > ids.length
-              ? ids.length
-              : index;
-      ids.insert(insertIndex, payload.teamId);
-      await onReorderTeams(ids);
-    }
-
-    final topDrop = _BucketDropZone(
-      label: 'Drop here to add to the top',
-      onAccept: (payload) => placeAtIndex(payload, 0),
-    );
-    final bottomDrop = _BucketDropZone(
-      label: 'Drop here to add to the bottom',
-      onAccept: (payload) => placeAtIndex(payload, teams.length),
-    );
-    final contentWidgets = <Widget>[
-      if (!canEdit) ...[
-        if (teams.isEmpty)
-          const Text('Drop a team here', style: TextStyle(color: Colors.white54))
-        else
-          for (final team in teams)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => onSelectTeam(team.id),
-                child: _TeamPill(team: team, sourceBucketId: bucket.id),
-              ),
+        Positioned(
+          top: 0,
+          right: 0,
+          bottom: 0,
+          child: ReorderableDragStartListener(
+            index: dragIndex,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Icon(Icons.drag_indicator),
             ),
-      ] else ...[
-        topDrop,
-        const SizedBox(height: 8),
-        if (teams.isEmpty)
-          const Text('Drop a team here', style: TextStyle(color: Colors.white54))
-        else
-          for (var index = 0; index < teams.length; index++)
-            _SortableBucketTeamRow(
-              key: ValueKey(teams[index].id),
-              team: teams[index],
-              sourceBucketId: bucket.id,
-              onSelectTeam: () => onSelectTeam(teams[index].id),
-              onDrop: (payload) => placeAtIndex(payload, index),
-            ),
-        const SizedBox(height: 8),
-        bottomDrop,
-      ],
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1D2F),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(bucket.name, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
-              const Spacer(),
-              Text(bucket.type.label, style: const TextStyle(color: Colors.white60)),
-            ],
           ),
-          if (bucket.comment.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(bucket.comment, style: const TextStyle(color: Colors.white70)),
-          ],
-          const SizedBox(height: 10),
-          ...contentWidgets,
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -748,192 +651,6 @@ class _TeamDetailsPanelState extends State<_TeamDetailsPanel> {
   }
 }
 
-class _DraggedTeam {
-  const _DraggedTeam({
-    required this.teamId,
-    this.sourceBucketId,
-  });
-
-  final String teamId;
-  final String? sourceBucketId;
-}
-
-Future<void> _handleMasterDrop({
-  required _DraggedTeam payload,
-  required List<TeamCard> teams,
-  required int targetIndex,
-  required Future<void> Function(String workspaceId, List<String> orderedTeamIds) onReorder,
-  required Future<void> Function(String workspaceId, String bucketId, String teamId) onRemoveFromBucket,
-  required String workspaceId,
-}) async {
-  final currentIndex = teams.indexWhere((team) => team.id == payload.teamId);
-  if (currentIndex == -1) return;
-  final next = [...teams];
-  final moving = next.removeAt(currentIndex);
-  var insertIndex = targetIndex;
-  if (insertIndex > currentIndex) {
-    insertIndex -= 1;
-  }
-  if (insertIndex < 0) {
-    insertIndex = 0;
-  }
-  if (insertIndex > next.length) {
-    insertIndex = next.length;
-  }
-  next.insert(insertIndex, moving);
-  await onReorder(workspaceId, next.map((team) => team.id).toList(growable: false));
-  if (payload.sourceBucketId != null) {
-    await onRemoveFromBucket(workspaceId, payload.sourceBucketId!, payload.teamId);
-  }
-}
-
-List<String> _reorderIds(List<TeamCard> teams, String teamId, int targetIndex) {
-  final ids = teams.map((team) => team.id).toList(growable: true);
-  final currentIndex = ids.indexOf(teamId);
-  if (currentIndex == -1) return ids;
-  ids.removeAt(currentIndex);
-  var insertIndex = targetIndex;
-  if (insertIndex > currentIndex) {
-    insertIndex -= 1;
-  }
-  if (insertIndex < 0) {
-    insertIndex = 0;
-  }
-  if (insertIndex > ids.length) {
-    insertIndex = ids.length;
-  }
-  ids.insert(insertIndex, teamId);
-  return ids;
-}
-
-class _RankingDropRow extends StatelessWidget {
-  const _RankingDropRow({
-    super.key,
-    required this.team,
-    required this.rank,
-    required this.canEdit,
-    required this.onSelect,
-    required this.onDrop,
-  });
-
-  final TeamCard team;
-  final int rank;
-  final bool canEdit;
-  final VoidCallback onSelect;
-  final ValueChanged<_DraggedTeam> onDrop;
-
-  @override
-  Widget build(BuildContext context) {
-    final row = Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onSelect,
-        child: _TeamTile(team: team, rank: rank),
-      ),
-    );
-
-    if (!canEdit) {
-      return row;
-    }
-
-    return DragTarget<_DraggedTeam>(
-      onAcceptWithDetails: (details) => onDrop(details.data),
-      builder: (context, candidateData, rejectedData) {
-        return LongPressDraggable<_DraggedTeam>(
-          data: _DraggedTeam(teamId: team.id),
-          feedback: Material(
-            color: Colors.transparent,
-            child: SizedBox(width: 320, child: _TeamTile(team: team, rank: rank)),
-          ),
-          childWhenDragging: Opacity(opacity: 0.4, child: row),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: candidateData.isNotEmpty ? Colors.lightBlueAccent : Colors.transparent),
-            ),
-            child: row,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SortableBucketTeamRow extends StatelessWidget {
-  const _SortableBucketTeamRow({
-    super.key,
-    required this.team,
-    required this.sourceBucketId,
-    required this.onSelectTeam,
-    required this.onDrop,
-  });
-
-  final TeamCard team;
-  final String sourceBucketId;
-  final VoidCallback onSelectTeam;
-  final ValueChanged<_DraggedTeam> onDrop;
-
-  @override
-  Widget build(BuildContext context) {
-    return DragTarget<_DraggedTeam>(
-      onAcceptWithDetails: (details) => onDrop(details.data),
-      builder: (context, candidateData, rejectedData) {
-        return LongPressDraggable<_DraggedTeam>(
-          data: _DraggedTeam(teamId: team.id, sourceBucketId: sourceBucketId),
-          feedback: Material(
-            color: Colors.transparent,
-            child: _TeamPill(team: team, sourceBucketId: sourceBucketId),
-          ),
-          childWhenDragging: Opacity(opacity: 0.35, child: _TeamPill(team: team, sourceBucketId: sourceBucketId)),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: candidateData.isNotEmpty ? Colors.lightBlueAccent : Colors.transparent),
-            ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: onSelectTeam,
-              child: _TeamPill(team: team, sourceBucketId: sourceBucketId),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _BucketDropZone extends StatelessWidget {
-  const _BucketDropZone({
-    required this.label,
-    required this.onAccept,
-  });
-
-  final String label;
-  final Future<void> Function(_DraggedTeam payload) onAccept;
-
-  @override
-  Widget build(BuildContext context) {
-    return DragTarget<_DraggedTeam>(
-      onAcceptWithDetails: (details) => onAccept(details.data),
-      builder: (context, candidateData, rejectedData) {
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          height: 20,
-          decoration: BoxDecoration(
-            color: candidateData.isNotEmpty ? const Color(0xFF1C3E5F) : const Color(0xFF0B1523),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: candidateData.isNotEmpty ? Colors.lightBlueAccent : Colors.white10),
-          ),
-          alignment: Alignment.center,
-          child: Text(label, style: const TextStyle(color: Colors.white60, fontSize: 11)),
-        );
-      },
-    );
-  }
-}
-
 class _TeamTile extends StatelessWidget {
   const _TeamTile({required this.team, required this.rank});
 
@@ -974,24 +691,6 @@ class _TeamTile extends StatelessWidget {
   }
 }
 
-class _TeamPill extends StatelessWidget {
-  const _TeamPill({required this.team, required this.sourceBucketId});
-
-  final TeamCard team;
-  final String sourceBucketId;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF14253C),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text('${team.teamNumber} ${team.nickname}'),
-    );
-  }
-}
 
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.label});

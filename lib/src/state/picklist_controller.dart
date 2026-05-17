@@ -38,7 +38,7 @@ class PickListController extends ChangeNotifier {
 
   List<WorkspaceSummary> get summaries => _summaries;
   WorkspaceState? get selectedWorkspace => _selectedWorkspace;
-  PickListUser? get user => _user ?? authService.currentUser();
+  PickListUser? get user => _user;
   bool get loading => _loading;
   bool get busy => _busy;
   String? get error => _error;
@@ -51,13 +51,15 @@ class PickListController extends ChangeNotifier {
   bool get canEditBoard {
     final user = this.user;
     final workspace = _selectedWorkspace;
-    return user != null && workspace != null && _isWorkspaceMember(workspace, user) && user.role != MemberRole.scout;
+    final member = workspace == null || user == null ? null : workspace.memberById(user.id);
+    return user != null && workspace != null && member != null && member.role != MemberRole.scout;
   }
 
   bool get canManageWorkspace {
     final user = this.user;
     final workspace = _selectedWorkspace;
-    return user != null && workspace != null && _isWorkspaceMember(workspace, user) && user.role == MemberRole.lead;
+    final member = workspace == null || user == null ? null : workspace.memberById(user.id);
+    return user != null && workspace != null && member != null && member.role == MemberRole.lead;
   }
 
   bool canViewWorkspace(WorkspaceState workspace) {
@@ -123,11 +125,19 @@ class PickListController extends ChangeNotifier {
   }
 
   Future<void> signOut() => authService.signOut();
+  
+  Future<void> signOutAndClear() async {
+    await authService.signOut();
+    closeWorkspace();
+  }
+
+  Future<void> signIn(AuthCredentials credentials) async {
+    await _runTracked('Signing in', () => authService.signIn(credentials));
+  }
 
   Future<void> saveMyProfile({
     required String displayName,
     required String teamOrgId,
-    required MemberRole role,
   }) async {
     final user = this.user;
     if (user == null) return;
@@ -137,7 +147,7 @@ class PickListController extends ChangeNotifier {
         displayName: displayName,
         teamOrgId: teamOrgId,
         email: user.email,
-        role: role,
+        role: user.role,
       ),
     ));
   }
@@ -150,7 +160,7 @@ class PickListController extends ChangeNotifier {
   }
 
   bool _isWorkspaceMember(WorkspaceState workspace, PickListUser user) {
-    return workspace.members.any((member) => member.id == user.id) || workspace.workspace.teamOrgId == user.teamOrgId;
+    return workspace.memberById(user.id) != null;
   }
 
   void _subscribeToSummaries() {
@@ -269,72 +279,6 @@ class PickListController extends ChangeNotifier {
     ));
   }
 
-  Future<void> moveTeamToBucket(String workspaceId, StrategyBucket bucket, String teamId) async {
-    final user = this.user;
-    if (user == null || !canEditBoard) return;
-    final nextTeamIds = [
-      ...bucket.teamIds.where((id) => id != teamId),
-      teamId,
-    ];
-    await _runTracked('Saving bucket', () => repository.upsertBucket(
-      workspaceId: workspaceId,
-      bucket: StrategyBucket(
-        id: bucket.id,
-        name: bucket.name,
-        type: bucket.type,
-        teamIds: nextTeamIds,
-        comment: bucket.comment,
-        updatedAt: DateTime.now(),
-      ),
-      actor: user,
-    ));
-  }
-
-  Future<void> removeTeamFromBucket(String workspaceId, String bucketId, String teamId) async {
-    final user = this.user;
-    if (user == null || !canEditBoard) return;
-    await _runTracked('Updating bucket', () => repository.removeTeamFromBucket(
-      workspaceId: workspaceId,
-      bucketId: bucketId,
-      teamId: teamId,
-      actor: user,
-    ));
-  }
-
-  Future<void> moveTeamBetweenBuckets(
-    String workspaceId,
-    String sourceBucketId,
-    String destinationBucketId,
-    String teamId,
-  ) async {
-    final user = this.user;
-    if (user == null || !canEditBoard) return;
-    await _runTracked('Updating buckets', () => repository.moveTeamBetweenBuckets(
-      workspaceId: workspaceId,
-      sourceBucketId: sourceBucketId,
-      destinationBucketId: destinationBucketId,
-      teamId: teamId,
-      actor: user,
-    ));
-  }
-
-  Future<void> reorderBucketTeams(String workspaceId, StrategyBucket bucket, List<String> orderedTeamIds) async {
-    final user = this.user;
-    if (user == null || !canEditBoard) return;
-    await _runTracked('Saving bucket', () => repository.upsertBucket(
-      workspaceId: workspaceId,
-      bucket: StrategyBucket(
-        id: bucket.id,
-        name: bucket.name,
-        type: bucket.type,
-        teamIds: orderedTeamIds,
-        comment: bucket.comment,
-        updatedAt: DateTime.now(),
-      ),
-      actor: user,
-    ));
-  }
-
   Future<void> updateAvailability(String workspaceId, String teamId, AvailabilityState availability) async {
     final user = this.user;
     if (user == null || !canEditBoard) return;
@@ -369,6 +313,25 @@ class PickListController extends ChangeNotifier {
     await _runTracked('Adding member', () => repository.addMember(
       workspaceId: workspaceId,
       member: member,
+      actor: user,
+    ));
+  }
+
+  Future<void> createTeam(
+    String workspaceId, {
+    required int teamNumber,
+    required String nickname,
+    Map<String, double> metrics = const {},
+  }) async {
+    final user = this.user;
+    if (user == null || !canEditBoard) return;
+    await _runTracked('Creating team', () => repository.createTeam(
+      workspaceId: workspaceId,
+      row: ImportedTeamRow(
+        teamNumber: teamNumber,
+        nickname: nickname,
+        metrics: metrics,
+      ),
       actor: user,
     ));
   }

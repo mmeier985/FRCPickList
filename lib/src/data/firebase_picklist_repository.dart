@@ -30,7 +30,6 @@ class FirebasePickListRepository implements PickListRepository {
       workspace: workspace,
       teams: const [],
       rankings: const [],
-      buckets: const [],
       auditTrail: [_audit(createdBy, 'create_workspace', workspace.id, now)],
       members: [createdBy],
     );
@@ -50,7 +49,6 @@ class FirebasePickListRepository implements PickListRepository {
         workspace: state.workspace.copyWith(updatedAt: now),
         teams: state.teams,
         rankings: state.rankings,
-        buckets: state.buckets,
         auditTrail: [...state.auditTrail, _audit(actor, 'add_member', member.id, now)],
         members: members,
       );
@@ -73,7 +71,6 @@ class FirebasePickListRepository implements PickListRepository {
         workspace: state.workspace.copyWith(updatedAt: now),
         teams: teams,
         rankings: state.rankings,
-        buckets: state.buckets,
         auditTrail: [...state.auditTrail, _audit(actor, 'add_note', teamId, now)],
         members: state.members,
       );
@@ -116,8 +113,44 @@ class FirebasePickListRepository implements PickListRepository {
         workspace: state.workspace.copyWith(updatedAt: now),
         teams: teams,
         rankings: rankings,
-        buckets: state.buckets,
         auditTrail: [...state.auditTrail, _audit(actor, 'import_teams', workspaceId, now)],
+        members: state.members,
+      );
+    });
+  }
+
+  @override
+  Future<void> createTeam({
+    required String workspaceId,
+    required ImportedTeamRow row,
+    required PickListUser actor,
+  }) async {
+    await _updateWorkspace(workspaceId, actor, (state, now) {
+      final existingByNumber = {for (final team in state.teams) team.teamNumber: team};
+      final current = existingByNumber[row.teamNumber];
+      final team = TeamCard(
+        id: current?.id ?? 'team-${row.teamNumber}',
+        teamNumber: row.teamNumber,
+        nickname: row.nickname,
+        importedMetrics: row.metrics,
+        notes: current?.notes ?? const [],
+        tags: current?.tags ?? const [],
+        availability: current?.availability ?? AvailabilityState.available,
+        updatedAt: now,
+      );
+      final teams = [
+        ...state.teams.where((item) => item.id != team.id),
+        team,
+      ];
+      final rankings = [
+        ...state.rankings.where((entry) => entry.teamId != team.id),
+        RankingEntry(teamId: team.id, order: state.rankings.length, updatedBy: actor.id, updatedAt: now),
+      ];
+      return WorkspaceState(
+        workspace: state.workspace.copyWith(updatedAt: now),
+        teams: teams,
+        rankings: rankings,
+        auditTrail: [...state.auditTrail, _audit(actor, 'create_team', team.id, now)],
         members: state.members,
       );
     });
@@ -150,91 +183,7 @@ class FirebasePickListRepository implements PickListRepository {
         workspace: state.workspace.copyWith(updatedAt: now),
         teams: state.teams,
         rankings: rankings,
-        buckets: state.buckets,
         auditTrail: [...state.auditTrail, _audit(actor, 'reorder_master', workspaceId, now)],
-        members: state.members,
-      );
-    });
-  }
-
-  @override
-  Future<void> upsertBucket({
-    required String workspaceId,
-    required StrategyBucket bucket,
-    required PickListUser actor,
-  }) async {
-    await _updateWorkspace(workspaceId, actor, (state, now) {
-      final buckets = [
-        ...state.buckets.where((item) => item.id != bucket.id),
-        bucket.copyWith(updatedAt: now),
-      ];
-      return WorkspaceState(
-        workspace: state.workspace.copyWith(updatedAt: now),
-        teams: state.teams,
-        rankings: state.rankings,
-        buckets: buckets,
-        auditTrail: [...state.auditTrail, _audit(actor, 'upsert_bucket', bucket.id, now)],
-        members: state.members,
-      );
-    });
-  }
-
-  @override
-  Future<void> removeTeamFromBucket({
-    required String workspaceId,
-    required String bucketId,
-    required String teamId,
-    required PickListUser actor,
-  }) async {
-    await _updateWorkspace(workspaceId, actor, (state, now) {
-      final buckets = state.buckets.map((bucket) {
-        if (bucket.id != bucketId) return bucket;
-        return bucket.copyWith(
-          teamIds: bucket.teamIds.where((id) => id != teamId).toList(growable: false),
-          updatedAt: now,
-        );
-      }).toList(growable: false);
-      return WorkspaceState(
-        workspace: state.workspace.copyWith(updatedAt: now),
-        teams: state.teams,
-        rankings: state.rankings,
-        buckets: buckets,
-        auditTrail: [...state.auditTrail, _audit(actor, 'remove_from_bucket', bucketId, now)],
-        members: state.members,
-      );
-    });
-  }
-
-  @override
-  Future<void> moveTeamBetweenBuckets({
-    required String workspaceId,
-    required String sourceBucketId,
-    required String destinationBucketId,
-    required String teamId,
-    required PickListUser actor,
-  }) async {
-    await _updateWorkspace(workspaceId, actor, (state, now) {
-      final buckets = state.buckets.map((bucket) {
-        if (bucket.id == sourceBucketId) {
-          return bucket.copyWith(
-            teamIds: bucket.teamIds.where((id) => id != teamId).toList(growable: false),
-            updatedAt: now,
-          );
-        }
-        if (bucket.id == destinationBucketId) {
-          return bucket.copyWith(
-            teamIds: [...bucket.teamIds.where((id) => id != teamId), teamId],
-            updatedAt: now,
-          );
-        }
-        return bucket;
-      }).toList(growable: false);
-      return WorkspaceState(
-        workspace: state.workspace.copyWith(updatedAt: now),
-        teams: state.teams,
-        rankings: state.rankings,
-        buckets: buckets,
-        auditTrail: [...state.auditTrail, _audit(actor, 'move_between_buckets', teamId, now)],
         members: state.members,
       );
     });
@@ -256,7 +205,6 @@ class FirebasePickListRepository implements PickListRepository {
         workspace: state.workspace.copyWith(updatedAt: now),
         teams: teams,
         rankings: state.rankings,
-        buckets: state.buckets,
         auditTrail: [...state.auditTrail, _audit(actor, 'set_availability', teamId, now)],
         members: state.members,
       );
@@ -335,17 +283,6 @@ class FirebasePickListRepository implements PickListRepository {
         .toList(growable: false)
       ..sort((a, b) => a.order.compareTo(b.order));
 
-    final buckets = (data['buckets'] as List<dynamic>? ?? const [])
-        .map((item) => StrategyBucket(
-              id: item['id'] as String,
-              name: item['name'] as String,
-              type: _bucketTypeFromName(item['type'] as String),
-              teamIds: List<String>.from(item['teamIds'] as List<dynamic>? ?? const []),
-              comment: item['comment'] as String? ?? '',
-              updatedAt: _readDateTime(item['updatedAt']),
-            ))
-        .toList(growable: false);
-
     final auditTrail = (data['auditTrail'] as List<dynamic>? ?? const [])
         .map((item) => AuditEntry(
               id: item['id'] as String,
@@ -371,13 +308,22 @@ class FirebasePickListRepository implements PickListRepository {
       workspace: workspace,
       teams: teams,
       rankings: rankings,
-      buckets: buckets,
       auditTrail: auditTrail,
       members: members,
     );
   }
 
   Map<String, dynamic> _stateToMap(WorkspaceState state) {
+    final membersById = {
+      for (final member in state.members)
+        member.id: {
+          'id': member.id,
+          'displayName': member.displayName,
+          'teamOrgId': member.teamOrgId,
+          'email': member.email,
+          'role': member.role.name,
+        }
+    };
     return {
       'workspace': {
         'id': state.workspace.id,
@@ -412,18 +358,6 @@ class FirebasePickListRepository implements PickListRepository {
             },
           )
           .toList(growable: false),
-      'buckets': state.buckets
-          .map(
-            (bucket) => {
-              'id': bucket.id,
-              'name': bucket.name,
-              'type': bucket.type.name,
-              'teamIds': bucket.teamIds,
-              'comment': bucket.comment,
-              'updatedAt': Timestamp.fromDate(bucket.updatedAt),
-            },
-          )
-          .toList(growable: false),
       'auditTrail': state.auditTrail
           .map(
             (entry) => {
@@ -447,6 +381,7 @@ class FirebasePickListRepository implements PickListRepository {
             },
           )
           .toList(growable: false),
+      'memberMap': membersById,
       'memberIds': state.members.map((member) => member.id).toList(growable: false),
     };
   }
@@ -507,10 +442,6 @@ class FirebasePickListRepository implements PickListRepository {
     return AvailabilityState.values.firstWhere((value) => value.name == name);
   }
 
-  BucketType _bucketTypeFromName(String name) {
-    return BucketType.values.firstWhere((value) => value.name == name);
-  }
-
   MemberRole _memberRoleFromName(String name) {
     return MemberRole.values.firstWhere((value) => value.name == name);
   }
@@ -557,26 +488,6 @@ extension on TeamCard {
       notes: notes ?? this.notes,
       tags: tags ?? this.tags,
       availability: availability ?? this.availability,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
-}
-
-extension on StrategyBucket {
-  StrategyBucket copyWith({
-    String? id,
-    String? name,
-    BucketType? type,
-    List<String>? teamIds,
-    String? comment,
-    DateTime? updatedAt,
-  }) {
-    return StrategyBucket(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      type: type ?? this.type,
-      teamIds: teamIds ?? this.teamIds,
-      comment: comment ?? this.comment,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

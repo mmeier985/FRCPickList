@@ -18,6 +18,7 @@ class AppBootstrap {
   static Future<AppBootstrap> initialize() async {
     const apiKey = String.fromEnvironment('FIREBASE_API_KEY', defaultValue: '');
     const appId = String.fromEnvironment('FIREBASE_APP_ID', defaultValue: '');
+    const authDomain = String.fromEnvironment('FIREBASE_AUTH_DOMAIN', defaultValue: '');
     const messagingSenderId = String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID', defaultValue: '');
     const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID', defaultValue: '');
     final firebaseConfigured = _firebaseConfigured(
@@ -31,6 +32,7 @@ class AppBootstrap {
         options: FirebaseOptions(
           apiKey: apiKey,
           appId: appId,
+          authDomain: authDomain.isEmpty ? null : authDomain,
           messagingSenderId: messagingSenderId,
           projectId: projectId,
           storageBucket: '$projectId.appspot.com',

@@ -60,7 +60,7 @@ class _EventListScreenState extends State<EventListScreen> {
                                     loading: controller.loading,
                                     error: controller.error,
                                     user: user,
-                                    onSignOut: controller.signOut,
+                                    onSignOut: controller.signOutAndClear,
                                   ),
                                 ),
                                 const SizedBox(width: 24),
@@ -88,7 +88,7 @@ class _EventListScreenState extends State<EventListScreen> {
                                   loading: controller.loading,
                                   error: controller.error,
                                   user: user,
-                                  onSignOut: controller.signOut,
+                                  onSignOut: controller.signOutAndClear,
                                 ),
                                 const SizedBox(height: 24),
                                 needsProfile
@@ -231,7 +231,7 @@ class _HeroPanel extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'One master ranking, multiple strategy buckets, and live team collaboration for alliance selection.',
+              'One master ranking and live team collaboration for alliance selection.',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white70),
             ),
             const SizedBox(height: 24),
@@ -267,7 +267,7 @@ class _HeroPanel extends StatelessWidget {
             const SizedBox(height: 24),
             _FeatureRow(
               label: 'Signed in',
-              value: user == null ? 'No' : '${user!.displayName} • ${user!.role.label}',
+              value: user == null ? 'No' : '${user!.displayName} • ${user!.teamOrgId}',
             ),
             if (user != null) ...[
               const SizedBox(height: 8),
@@ -280,7 +280,7 @@ class _HeroPanel extends StatelessWidget {
             const SizedBox(height: 12),
             const _FeatureRow(label: 'Realtime sync', value: 'Firebase-ready'),
             const _FeatureRow(label: 'Offline cache', value: 'Basic retry queue'),
-            const _FeatureRow(label: 'Roles', value: 'Scout / Strategist / Lead'),
+            const _FeatureRow(label: 'Roles', value: 'Workspace member roles'),
           ],
         ),
       ),
@@ -365,7 +365,6 @@ class _ProfilePanel extends StatefulWidget {
   final Future<void> Function({
     required String displayName,
     required String teamOrgId,
-    required MemberRole role,
   }) onSave;
 
   @override
@@ -375,7 +374,6 @@ class _ProfilePanel extends StatefulWidget {
 class _ProfilePanelState extends State<_ProfilePanel> {
   late final TextEditingController _displayNameController;
   late final TextEditingController _teamOrgController;
-  late MemberRole _role;
   bool _saving = false;
 
   @override
@@ -383,7 +381,6 @@ class _ProfilePanelState extends State<_ProfilePanel> {
     super.initState();
     _displayNameController = TextEditingController(text: widget.user?.displayName ?? '');
     _teamOrgController = TextEditingController(text: widget.user?.teamOrgId ?? '');
-    _role = widget.user?.role ?? MemberRole.strategist;
   }
 
   @override
@@ -404,7 +401,7 @@ class _ProfilePanelState extends State<_ProfilePanel> {
             Text('Complete your profile', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 12),
             Text(
-              'Set your team organization and role so workspace access can be resolved from Firestore.',
+              'Set your team organization so the app can load your event workspaces.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
             ),
             const SizedBox(height: 16),
@@ -416,23 +413,6 @@ class _ProfilePanelState extends State<_ProfilePanel> {
             TextField(
               controller: _teamOrgController,
               decoration: const InputDecoration(labelText: 'Team org id'),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<MemberRole>(
-              initialValue: _role,
-              items: MemberRole.values
-                  .map(
-                    (role) => DropdownMenuItem(
-                      value: role,
-                      child: Text(role.label),
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _role = value);
-              },
-              decoration: const InputDecoration(labelText: 'Role'),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -447,7 +427,6 @@ class _ProfilePanelState extends State<_ProfilePanel> {
                         await widget.onSave(
                           displayName: displayName,
                           teamOrgId: teamOrgId,
-                          role: _role,
                         );
                       } finally {
                         if (mounted) {

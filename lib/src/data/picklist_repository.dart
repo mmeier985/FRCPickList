@@ -13,27 +13,14 @@ abstract class PickListRepository {
     required List<ImportedTeamRow> rows,
     required PickListUser actor,
   });
+  Future<void> createTeam({
+    required String workspaceId,
+    required ImportedTeamRow row,
+    required PickListUser actor,
+  });
   Future<void> setRankingOrder({
     required String workspaceId,
     required List<String> orderedTeamIds,
-    required PickListUser actor,
-  });
-  Future<void> upsertBucket({
-    required String workspaceId,
-    required StrategyBucket bucket,
-    required PickListUser actor,
-  });
-  Future<void> removeTeamFromBucket({
-    required String workspaceId,
-    required String bucketId,
-    required String teamId,
-    required PickListUser actor,
-  });
-  Future<void> moveTeamBetweenBuckets({
-    required String workspaceId,
-    required String sourceBucketId,
-    required String destinationBucketId,
-    required String teamId,
     required PickListUser actor,
   });
   Future<void> addNote({

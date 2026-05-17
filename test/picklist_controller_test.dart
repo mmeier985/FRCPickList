@@ -113,22 +113,21 @@ void main() {
 }
 
 WorkspaceState _workspaceWithMember({required String userId, required MemberRole role}) {
-  final workspace = EventWorkspace(
-    id: 'workspace-1',
-    name: 'Test',
-    teamOrgId: 'team-4414',
-    createdBy: 'user-1',
+    final workspace = EventWorkspace(
+      id: 'workspace-1',
+      name: 'Test',
+      teamOrgId: 'team-4414',
+      createdBy: 'user-1',
     status: WorkspaceStatus.active,
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   );
-  return WorkspaceState(
-    workspace: workspace,
-    teams: const [],
-    rankings: const [],
-    buckets: const [],
-    auditTrail: const [],
-    members: [
+    return WorkspaceState(
+      workspace: workspace,
+      teams: const [],
+      rankings: const [],
+      auditTrail: const [],
+      members: [
       PickListUser(
         id: userId,
         displayName: 'Member',
@@ -143,14 +142,25 @@ WorkspaceState _workspaceWithMember({required String userId, required MemberRole
 class FakeAuthService implements AuthService {
   FakeAuthService(this._user);
 
-  PickListUser _user;
+  PickListUser? _user;
 
   @override
-  PickListUser currentUser() => _user;
+  PickListUser? currentUser() => _user;
 
   @override
   Stream<PickListUser?> watchUser() async* {
     yield _user;
+  }
+
+  @override
+  Future<void> signIn(AuthCredentials credentials) async {
+    _user = PickListUser(
+      id: 'signed-in-${credentials.email}',
+      displayName: credentials.displayName,
+      teamOrgId: credentials.teamOrgId,
+      email: credentials.email,
+      role: MemberRole.scout,
+    );
   }
 
   @override
@@ -159,7 +169,9 @@ class FakeAuthService implements AuthService {
   }
 
   @override
-  Future<void> signOut() async {}
+  Future<void> signOut() async {
+    _user = null;
+  }
 }
 
 class FakePickListRepository implements PickListRepository {
@@ -209,19 +221,9 @@ class FakePickListRepository implements PickListRepository {
   }) async {}
 
   @override
-  Future<void> moveTeamBetweenBuckets({
+  Future<void> createTeam({
     required String workspaceId,
-    required String sourceBucketId,
-    required String destinationBucketId,
-    required String teamId,
-    required PickListUser actor,
-  }) async {}
-
-  @override
-  Future<void> removeTeamFromBucket({
-    required String workspaceId,
-    required String bucketId,
-    required String teamId,
+    required ImportedTeamRow row,
     required PickListUser actor,
   }) async {}
 
@@ -239,13 +241,6 @@ class FakePickListRepository implements PickListRepository {
     required String workspaceId,
     required String teamId,
     required AvailabilityState availability,
-    required PickListUser actor,
-  }) async {}
-
-  @override
-  Future<void> upsertBucket({
-    required String workspaceId,
-    required StrategyBucket bucket,
     required PickListUser actor,
   }) async {}
 

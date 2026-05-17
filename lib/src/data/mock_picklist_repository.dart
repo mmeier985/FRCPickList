@@ -35,45 +35,10 @@ class MockPickListRepository implements PickListRepository {
         updatedAt: now,
       ),
     );
-    final buckets = <StrategyBucket>[
-      StrategyBucket(
-        id: 'bucket-captain',
-        name: 'Captain',
-        type: BucketType.captain,
-        teamIds: [teams[1].id],
-        comment: 'Primary top seed target.',
-        updatedAt: now,
-      ),
-      StrategyBucket(
-        id: 'bucket-first',
-        name: 'First Pick',
-        type: BucketType.firstPick,
-        teamIds: [teams[2].id, teams[0].id],
-        comment: 'High mobility, strong cycle.',
-        updatedAt: now,
-      ),
-      StrategyBucket(
-        id: 'bucket-defense',
-        name: 'Defense',
-        type: BucketType.custom,
-        teamIds: [teams[3].id],
-        comment: 'Useful if playoffs get physical.',
-        updatedAt: now,
-      ),
-      StrategyBucket(
-        id: 'bucket-avoid',
-        name: 'Do Not Pick',
-        type: BucketType.doNotPick,
-        teamIds: [teams[4].id],
-        comment: 'Avoid due to unreliability.',
-        updatedAt: now,
-      ),
-    ];
     final state = WorkspaceState(
       workspace: workspace,
       teams: teams,
       rankings: rankings,
-      buckets: buckets,
       auditTrail: const [],
       members: const [
         PickListUser(
@@ -141,7 +106,6 @@ class MockPickListRepository implements PickListRepository {
       workspace: workspace,
       teams: const [],
       rankings: const [],
-      buckets: const [],
       auditTrail: const [],
       members: [createdBy],
     );
@@ -186,7 +150,6 @@ class MockPickListRepository implements PickListRepository {
         for (var i = 0; i < rankingIds.length; i++)
           RankingEntry(teamId: rankingIds[i], order: i, updatedBy: actor.id, updatedAt: now),
       ],
-      buckets: _state.buckets,
       auditTrail: [
         ..._state.auditTrail,
         AuditEntry(
@@ -195,6 +158,59 @@ class MockPickListRepository implements PickListRepository {
           actorName: actor.displayName,
           action: 'import_teams',
           targetId: workspaceId,
+          createdAt: now,
+        ),
+      ],
+      members: _state.members,
+    );
+    _summaries = _summaries
+        .map((summary) => summary.workspace.id == workspaceId
+            ? WorkspaceSummary(workspace: summary.workspace, teamCount: teams.length, updatedAt: now)
+            : summary)
+        .toList();
+    _emit();
+  }
+
+  @override
+  Future<void> createTeam({
+    required String workspaceId,
+    required ImportedTeamRow row,
+    required PickListUser actor,
+  }) async {
+    if (_state.workspace.id != workspaceId) return;
+    final now = DateTime.now();
+    final existing = {for (final team in _state.teams) team.teamNumber: team};
+    final current = existing[row.teamNumber];
+    final team = TeamCard(
+      id: current?.id ?? 'team-${row.teamNumber}',
+      teamNumber: row.teamNumber,
+      nickname: row.nickname,
+      importedMetrics: row.metrics,
+      notes: current?.notes ?? const [],
+      tags: current?.tags ?? const [],
+      availability: current?.availability ?? AvailabilityState.available,
+      updatedAt: now,
+    );
+    final teams = [
+      ..._state.teams.where((item) => item.id != team.id),
+      team,
+    ];
+    final rankings = [
+      ..._state.rankings.where((entry) => entry.teamId != team.id),
+      RankingEntry(teamId: team.id, order: _state.rankings.length, updatedBy: actor.id, updatedAt: now),
+    ];
+    _state = WorkspaceState(
+      workspace: _state.workspace,
+      teams: teams,
+      rankings: rankings,
+      auditTrail: [
+        ..._state.auditTrail,
+        AuditEntry(
+          id: _uuid.v4(),
+          actorId: actor.id,
+          actorName: actor.displayName,
+          action: 'create_team',
+          targetId: team.id,
           createdAt: now,
         ),
       ],
@@ -223,7 +239,6 @@ class MockPickListRepository implements PickListRepository {
         for (var i = 0; i < orderedTeamIds.length; i++)
           RankingEntry(teamId: orderedTeamIds[i], order: i, updatedBy: actor.id, updatedAt: now),
       ],
-      buckets: _state.buckets,
       auditTrail: [
         ..._state.auditTrail,
         AuditEntry(
@@ -232,120 +247,6 @@ class MockPickListRepository implements PickListRepository {
           actorName: actor.displayName,
           action: 'reorder_master',
           targetId: workspaceId,
-          createdAt: now,
-        ),
-      ],
-      members: _state.members,
-    );
-    _emit();
-  }
-
-  @override
-  Future<void> upsertBucket({
-    required String workspaceId,
-    required StrategyBucket bucket,
-    required PickListUser actor,
-  }) async {
-    if (_state.workspace.id != workspaceId) return;
-    final now = DateTime.now();
-    final buckets = [..._state.buckets.where((item) => item.id != bucket.id), bucket.copyWith(updatedAt: now)];
-    _state = WorkspaceState(
-      workspace: _state.workspace,
-      teams: _state.teams,
-      rankings: _state.rankings,
-      buckets: buckets,
-      auditTrail: [
-        ..._state.auditTrail,
-        AuditEntry(
-          id: _uuid.v4(),
-          actorId: actor.id,
-          actorName: actor.displayName,
-          action: 'upsert_bucket',
-          targetId: bucket.id,
-          createdAt: now,
-        ),
-      ],
-      members: _state.members,
-    );
-    _emit();
-  }
-
-  @override
-  Future<void> removeTeamFromBucket({
-    required String workspaceId,
-    required String bucketId,
-    required String teamId,
-    required PickListUser actor,
-  }) async {
-    if (_state.workspace.id != workspaceId) return;
-    final now = DateTime.now();
-    final buckets = _state.buckets.map((bucket) {
-      if (bucket.id != bucketId) return bucket;
-      return bucket.copyWith(
-        teamIds: bucket.teamIds.where((id) => id != teamId).toList(growable: false),
-        updatedAt: now,
-      );
-    }).toList(growable: false);
-    _state = WorkspaceState(
-      workspace: _state.workspace,
-      teams: _state.teams,
-      rankings: _state.rankings,
-      buckets: buckets,
-      auditTrail: [
-        ..._state.auditTrail,
-        AuditEntry(
-          id: _uuid.v4(),
-          actorId: actor.id,
-          actorName: actor.displayName,
-          action: 'remove_from_bucket',
-          targetId: bucketId,
-          createdAt: now,
-        ),
-      ],
-      members: _state.members,
-    );
-    _emit();
-  }
-
-  @override
-  Future<void> moveTeamBetweenBuckets({
-    required String workspaceId,
-    required String sourceBucketId,
-    required String destinationBucketId,
-    required String teamId,
-    required PickListUser actor,
-  }) async {
-    if (_state.workspace.id != workspaceId) return;
-    final now = DateTime.now();
-    final buckets = _state.buckets.map((bucket) {
-      if (bucket.id == sourceBucketId) {
-        return bucket.copyWith(
-          teamIds: bucket.teamIds.where((id) => id != teamId).toList(growable: false),
-          updatedAt: now,
-        );
-      }
-      if (bucket.id == destinationBucketId) {
-        final nextTeamIds = [
-          ...bucket.teamIds.where((id) => id != teamId),
-          teamId,
-        ];
-        return bucket.copyWith(teamIds: nextTeamIds, updatedAt: now);
-      }
-      return bucket;
-    }).toList(growable: false);
-    _state = WorkspaceState(
-      workspace: _state.workspace,
-      teams: _state.teams,
-      rankings: _state.rankings,
-      buckets: buckets,
-      auditTrail: [
-        ..._state.auditTrail,
-        AuditEntry(
-          id: _uuid.v4(),
-          actorId: actor.id,
-          actorName: actor.displayName,
-          action: 'move_between_buckets',
-          targetId: teamId,
           createdAt: now,
         ),
       ],
@@ -380,7 +281,6 @@ class MockPickListRepository implements PickListRepository {
       workspace: _state.workspace,
       teams: teams,
       rankings: _state.rankings,
-      buckets: _state.buckets,
       auditTrail: [
         ..._state.auditTrail,
         AuditEntry(
@@ -423,7 +323,6 @@ class MockPickListRepository implements PickListRepository {
       workspace: _state.workspace,
       teams: teams,
       rankings: _state.rankings,
-      buckets: _state.buckets,
       auditTrail: [
         ..._state.auditTrail,
         AuditEntry(
@@ -451,7 +350,6 @@ class MockPickListRepository implements PickListRepository {
       workspace: _state.workspace,
       teams: _state.teams,
       rankings: _state.rankings,
-      buckets: _state.buckets,
       auditTrail: [
         ..._state.auditTrail,
         AuditEntry(
@@ -478,25 +376,5 @@ class MockPickListRepository implements PickListRepository {
   Stream<WorkspaceState?> watchWorkspace(String workspaceId) async* {
     if (_state.workspace.id == workspaceId) yield _state;
     yield* _workspaceController.stream.map((state) => state?.workspace.id == workspaceId ? state : null);
-  }
-}
-
-extension on StrategyBucket {
-  StrategyBucket copyWith({
-    String? id,
-    String? name,
-    BucketType? type,
-    List<String>? teamIds,
-    String? comment,
-    DateTime? updatedAt,
-  }) {
-    return StrategyBucket(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      type: type ?? this.type,
-      teamIds: teamIds ?? this.teamIds,
-      comment: comment ?? this.comment,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
   }
 }

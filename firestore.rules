@@ -6,35 +6,32 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function hasRole(role) {
-      return signedIn() && request.auth.token.role == role;
-    }
-
-    function hasAnyRole(roles) {
-      return signedIn() && request.auth.token.role in roles;
-    }
-
-    function inWorkspaceTeamOrg(teamOrgId) {
-      return signedIn() && request.auth.token.teamOrgId == teamOrgId;
+    function isWorkspaceMember(data) {
+      return signedIn() && data.memberMap.keys().hasAny([request.auth.uid]);
     }
 
     function hasWorkspaceAccess(data) {
       return signedIn() && (
-        data.memberIds.hasAny([request.auth.uid]) ||
+        isWorkspaceMember(data) ||
         data.workspace.teamOrgId == request.auth.token.teamOrgId
       );
     }
 
+    function memberRoleIs(data, roles) {
+      return isWorkspaceMember(data) && data.memberMap[request.auth.uid].role in roles;
+    }
+
     match /users/{userId} {
       allow read: if signedIn() && request.auth.uid == userId;
-      allow write: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role == 'scout';
+      allow update: if signedIn() && request.auth.uid == userId && request.resource.data.role == resource.data.role;
     }
 
     match /workspaces/{workspaceId} {
       allow read: if hasWorkspaceAccess(resource.data);
-      allow create: if signedIn() && request.resource.data.workspace.teamOrgId == request.auth.token.teamOrgId;
-      allow update: if hasWorkspaceAccess(resource.data) && hasAnyRole(['strategist', 'lead']);
-      allow delete: if hasRole('lead');
+      allow create: if signedIn() && request.auth.token.teamOrgId == request.resource.data.workspace.teamOrgId && request.auth.token.role == 'lead';
+      allow update: if hasWorkspaceAccess(resource.data) && memberRoleIs(resource.data, ['strategist', 'lead']);
+      allow delete: if hasWorkspaceAccess(resource.data) && memberRoleIs(resource.data, ['lead']);
     }
 
     match /{document=**} {

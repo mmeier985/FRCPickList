@@ -4,7 +4,6 @@ enum MemberRole { scout, strategist, lead }
 enum WorkspaceStatus { draft, active, archived }
 enum SyncState { idle, syncing, saved, failed }
 enum AvailabilityState { available, captainOnly, avoid, defense, highRisk }
-enum BucketType { captain, firstPick, secondPick, backup, doNotPick, custom }
 
 extension MemberRoleLabel on MemberRole {
   String get label => switch (this) {
@@ -21,17 +20,6 @@ extension AvailabilityStateLabel on AvailabilityState {
         AvailabilityState.avoid => 'Avoid',
         AvailabilityState.defense => 'Defense',
         AvailabilityState.highRisk => 'High risk',
-      };
-}
-
-extension BucketTypeLabel on BucketType {
-  String get label => switch (this) {
-        BucketType.captain => 'Captain',
-        BucketType.firstPick => 'First pick',
-        BucketType.secondPick => 'Second pick',
-        BucketType.backup => 'Backup',
-        BucketType.doNotPick => 'Do not pick',
-        BucketType.custom => 'Custom',
       };
 }
 
@@ -129,25 +117,6 @@ class RankingEntry {
 }
 
 @immutable
-class StrategyBucket {
-  const StrategyBucket({
-    required this.id,
-    required this.name,
-    required this.type,
-    required this.teamIds,
-    required this.comment,
-    required this.updatedAt,
-  });
-
-  final String id;
-  final String name;
-  final BucketType type;
-  final List<String> teamIds;
-  final String comment;
-  final DateTime updatedAt;
-}
-
-@immutable
 class AuditEntry {
   const AuditEntry({
     required this.id,
@@ -172,7 +141,6 @@ class WorkspaceState {
     required this.workspace,
     required this.teams,
     required this.rankings,
-    required this.buckets,
     required this.auditTrail,
     required this.members,
   });
@@ -180,9 +148,15 @@ class WorkspaceState {
   final EventWorkspace workspace;
   final List<TeamCard> teams;
   final List<RankingEntry> rankings;
-  final List<StrategyBucket> buckets;
   final List<AuditEntry> auditTrail;
   final List<PickListUser> members;
+
+  PickListUser? memberById(String id) {
+    for (final member in members) {
+      if (member.id == id) return member;
+    }
+    return null;
+  }
 
   TeamCard? teamById(String id) {
     for (final team in teams) {
@@ -194,13 +168,6 @@ class WorkspaceState {
   RankingEntry? rankingByTeamId(String teamId) {
     for (final entry in rankings) {
       if (entry.teamId == teamId) return entry;
-    }
-    return null;
-  }
-
-  StrategyBucket? bucketById(String id) {
-    for (final bucket in buckets) {
-      if (bucket.id == id) return bucket;
     }
     return null;
   }
