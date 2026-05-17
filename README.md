@@ -54,6 +54,8 @@ Before deploying:
 3. Deploy hosting and rules:
    - `firebase deploy`
 
+The hosting config rewrites all routes to `index.html`, which keeps Flutter web refreshes and deep links working after deployment.
+
 If you want to validate the hosted build locally first:
 
 1. Build the app:
