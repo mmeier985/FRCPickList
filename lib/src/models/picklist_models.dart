@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 enum MemberRole { scout, strategist, lead }
 enum WorkspaceStatus { draft, active, archived }
+enum SyncState { idle, syncing, saved, failed }
 enum AvailabilityState { available, captainOnly, avoid, defense, highRisk }
 enum BucketType { captain, firstPick, secondPick, backup, doNotPick, custom }
 

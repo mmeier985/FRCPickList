@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:csv/csv.dart';
-
 import 'picklist_repository.dart';
 
 class ImportPreview {
@@ -18,24 +16,40 @@ class ImportPreview {
   bool get hasIssues => issues.isNotEmpty;
 }
 
+ImportPreview reviewImportAgainstWorkspace(ImportPreview preview, Iterable<int> existingTeamNumbers) {
+  final existing = existingTeamNumbers.toSet();
+  final issues = [...preview.issues];
+  for (final row in preview.rows) {
+    if (existing.contains(row.teamNumber)) {
+      issues.add('Team ${row.teamNumber} already exists in this workspace and will be updated.');
+    }
+  }
+  return ImportPreview(fileName: preview.fileName, rows: preview.rows, issues: issues);
+}
+
 List<ImportedTeamRow> parseCsvImport(String content) {
-  final rows = const CsvToListConverter().convert(content);
-  if (rows.isEmpty) {
+  final lines = content
+      .split(RegExp(r'\r?\n'))
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList(growable: false);
+  if (lines.isEmpty) {
     throw FormatException('CSV file is empty.');
   }
-  final headers = rows.first.map((value) => value.toString().trim().toLowerCase()).toList();
+  final headers = _splitCsvRow(lines.first).map((value) => value.trim().toLowerCase()).toList(growable: false);
   final teamNumberIndex = headers.indexOf('teamnumber');
   final nicknameIndex = headers.indexOf('nickname');
   if (teamNumberIndex == -1 || nicknameIndex == -1) {
     throw FormatException('CSV must include teamNumber and nickname columns.');
   }
-  return rows.skip(1).where((row) => row.isNotEmpty).map((row) {
+  return lines.skip(1).map((line) {
+    final row = _splitCsvRow(line);
     final teamNumber = int.parse(row[teamNumberIndex].toString());
     final nickname = row[nicknameIndex].toString();
     final metrics = <String, double>{};
     for (var i = 0; i < headers.length; i++) {
       if (i == teamNumberIndex || i == nicknameIndex) continue;
-      final value = double.tryParse(row[i].toString());
+      final value = i < row.length ? double.tryParse(row[i].toString()) : null;
       if (value != null) {
         metrics[headers[i]] = value;
       }
@@ -45,11 +59,15 @@ List<ImportedTeamRow> parseCsvImport(String content) {
 }
 
 ImportPreview previewCsvImport(String fileName, String content) {
-  final rows = const CsvToListConverter().convert(content);
-  if (rows.isEmpty) {
+  final lines = content
+      .split(RegExp(r'\r?\n'))
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList(growable: false);
+  if (lines.isEmpty) {
     throw FormatException('CSV file is empty.');
   }
-  final headers = rows.first.map((value) => value.toString().trim().toLowerCase()).toList();
+  final headers = _splitCsvRow(lines.first).map((value) => value.trim().toLowerCase()).toList(growable: false);
   final teamNumberIndex = headers.indexOf('teamnumber');
   final nicknameIndex = headers.indexOf('nickname');
   if (teamNumberIndex == -1 || nicknameIndex == -1) {
@@ -58,11 +76,8 @@ ImportPreview previewCsvImport(String fileName, String content) {
   final issues = <String>[];
   final seenTeams = <int>{};
   final importedRows = <ImportedTeamRow>[];
-  for (var rowIndex = 1; rowIndex < rows.length; rowIndex++) {
-    final row = rows[rowIndex];
-    if (row.isEmpty) {
-      continue;
-    }
+  for (var rowIndex = 1; rowIndex < lines.length; rowIndex++) {
+    final row = _splitCsvRow(lines[rowIndex]);
     try {
       final teamNumber = int.parse(row[teamNumberIndex].toString());
       final nickname = row[nicknameIndex].toString().trim();
@@ -76,7 +91,7 @@ ImportPreview previewCsvImport(String fileName, String content) {
       final metrics = <String, double>{};
       for (var i = 0; i < headers.length; i++) {
         if (i == teamNumberIndex || i == nicknameIndex) continue;
-        final value = double.tryParse(row[i].toString());
+        final value = i < row.length ? double.tryParse(row[i].toString()) : null;
         if (value != null) {
           metrics[headers[i]] = value;
         }
@@ -89,6 +104,27 @@ ImportPreview previewCsvImport(String fileName, String content) {
     }
   }
   return ImportPreview(fileName: fileName, rows: importedRows, issues: issues);
+}
+
+List<String> _splitCsvRow(String line) {
+  final fields = <String>[];
+  final buffer = StringBuffer();
+  var inQuotes = false;
+  for (var index = 0; index < line.length; index++) {
+    final char = line[index];
+    if (char == '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (char == ',' && !inQuotes) {
+      fields.add(buffer.toString());
+      buffer.clear();
+      continue;
+    }
+    buffer.write(char);
+  }
+  fields.add(buffer.toString());
+  return fields;
 }
 
 List<ImportedTeamRow> parseJsonImport(String content) {

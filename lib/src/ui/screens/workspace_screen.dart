@@ -40,6 +40,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               canManage: controller.canManageWorkspace,
               memberCount: workspace.members.length,
               syncHint: controller.pendingImportMessage,
+              syncState: controller.syncState,
+              syncMessage: controller.syncMessage,
+              lastSyncAt: controller.lastSyncAt,
             ),
             Expanded(
               child: LayoutBuilder(
@@ -206,6 +209,9 @@ class _TopBar extends StatelessWidget {
     required this.canManage,
     required this.memberCount,
     required this.syncHint,
+    required this.syncState,
+    required this.syncMessage,
+    required this.lastSyncAt,
   });
 
   final EventWorkspace workspace;
@@ -216,6 +222,9 @@ class _TopBar extends StatelessWidget {
   final bool canManage;
   final int memberCount;
   final String? syncHint;
+  final SyncState syncState;
+  final String? syncMessage;
+  final DateTime? lastSyncAt;
 
   @override
   Widget build(BuildContext context) {
@@ -234,6 +243,7 @@ class _TopBar extends StatelessWidget {
             alignment: isWide ? WrapAlignment.end : WrapAlignment.start,
             children: [
               if (syncHint != null) Text(syncHint!, style: const TextStyle(color: Colors.amberAccent)),
+              _SyncBadge(state: syncState, message: syncMessage, lastSyncAt: lastSyncAt),
               OutlinedButton.icon(
                 onPressed: onImport,
                 icon: const Icon(Icons.upload_file),
@@ -278,6 +288,47 @@ class _TopBar extends StatelessWidget {
                   ],
                 );
         },
+      ),
+    );
+  }
+}
+
+class _SyncBadge extends StatelessWidget {
+  const _SyncBadge({
+    required this.state,
+    required this.message,
+    required this.lastSyncAt,
+  });
+
+  final SyncState state;
+  final String? message;
+  final DateTime? lastSyncAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (state) {
+      SyncState.idle => Colors.white70,
+      SyncState.syncing => Colors.lightBlueAccent,
+      SyncState.saved => Colors.lightGreenAccent,
+      SyncState.failed => Colors.redAccent,
+    };
+    final label = switch (state) {
+      SyncState.idle => 'Idle',
+      SyncState.syncing => 'Saving...',
+      SyncState.saved => 'Saved',
+      SyncState.failed => 'Needs attention',
+    };
+    final subtitle = lastSyncAt == null ? '' : ' • ${TimeOfDay.fromDateTime(lastSyncAt!).format(context)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        message == null ? '$label$subtitle' : '$label$subtitle • $message',
+        style: TextStyle(color: color, fontWeight: FontWeight.w600),
       ),
     );
   }

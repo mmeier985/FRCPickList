@@ -32,6 +32,9 @@ class PickListController extends ChangeNotifier {
   String? _error;
   String? _pendingImportMessage;
   ImportPreview? _pendingImportPreview;
+  SyncState _syncState = SyncState.idle;
+  String? _syncMessage;
+  DateTime? _lastSyncAt;
 
   List<WorkspaceSummary> get summaries => _summaries;
   WorkspaceState? get selectedWorkspace => _selectedWorkspace;
@@ -41,6 +44,9 @@ class PickListController extends ChangeNotifier {
   String? get error => _error;
   String? get pendingImportMessage => _pendingImportMessage;
   ImportPreview? get pendingImportPreview => _pendingImportPreview;
+  SyncState get syncState => _syncState;
+  String? get syncMessage => _syncMessage;
+  DateTime? get lastSyncAt => _lastSyncAt;
 
   bool get canEditBoard {
     final user = this.user;
@@ -89,7 +95,7 @@ class PickListController extends ChangeNotifier {
         name: name,
         createdBy: user,
       );
-      await selectWorkspace(workspace.id);
+      await _runTracked('Opening workspace', () => selectWorkspace(workspace.id));
     } finally {
       _setBusy(false);
     }
@@ -125,7 +131,7 @@ class PickListController extends ChangeNotifier {
   }) async {
     final user = this.user;
     if (user == null) return;
-    await authService.saveProfile(
+    await _runTracked('Saving profile', () => authService.saveProfile(
       PickListUser(
         id: user.id,
         displayName: displayName,
@@ -133,7 +139,7 @@ class PickListController extends ChangeNotifier {
         email: user.email,
         role: role,
       ),
-    );
+    ));
   }
 
   void closeWorkspace() {
@@ -190,9 +196,15 @@ class PickListController extends ChangeNotifier {
     final preview = file.name.toLowerCase().endsWith('.json')
         ? previewJsonImport(file.name, content)
         : previewCsvImport(file.name, content);
-    _pendingImportPreview = preview;
+    final reviewedPreview = _selectedWorkspace == null
+        ? preview
+        : reviewImportAgainstWorkspace(
+            preview,
+            _selectedWorkspace!.teams.map((team) => team.teamNumber),
+          );
+    _pendingImportPreview = reviewedPreview;
     notifyListeners();
-    return preview;
+    return reviewedPreview;
   }
 
   Future<void> importWorkspaceFile(String workspaceId) async {
@@ -206,11 +218,11 @@ class PickListController extends ChangeNotifier {
     if (user == null) return;
     _pendingImportMessage = 'Imported ${preview.rows.length} teams from ${preview.fileName}';
     notifyListeners();
-    await repository.importTeams(
-      workspaceId: workspaceId,
-      rows: preview.rows,
-      actor: user,
-    );
+    await _runTracked('Importing teams', () => repository.importTeams(
+          workspaceId: workspaceId,
+          rows: preview.rows,
+          actor: user,
+        ));
     _pendingImportMessage = null;
     _pendingImportPreview = null;
     notifyListeners();
@@ -221,14 +233,40 @@ class PickListController extends ChangeNotifier {
     notifyListeners();
   }
 
+  @visibleForTesting
+  void debugSetSelectedWorkspace(WorkspaceState? workspace) {
+    _selectedWorkspace = workspace;
+    notifyListeners();
+  }
+
+  Future<T> _runTracked<T>(String message, Future<T> Function() action) async {
+    _syncState = SyncState.syncing;
+    _syncMessage = message;
+    notifyListeners();
+    try {
+      final result = await action();
+      _syncState = SyncState.saved;
+      _syncMessage = '$message complete';
+      _lastSyncAt = DateTime.now();
+      notifyListeners();
+      return result;
+    } catch (error) {
+      _syncState = SyncState.failed;
+      _syncMessage = '$message failed';
+      _error = error.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   Future<void> reorderMasterList(String workspaceId, List<String> orderedTeamIds) async {
     final user = this.user;
     if (user == null || !canEditBoard) return;
-    await repository.setRankingOrder(
+    await _runTracked('Saving master ranking', () => repository.setRankingOrder(
       workspaceId: workspaceId,
       orderedTeamIds: orderedTeamIds,
       actor: user,
-    );
+    ));
   }
 
   Future<void> moveTeamToBucket(String workspaceId, StrategyBucket bucket, String teamId) async {
@@ -238,7 +276,7 @@ class PickListController extends ChangeNotifier {
       ...bucket.teamIds.where((id) => id != teamId),
       teamId,
     ];
-    await repository.upsertBucket(
+    await _runTracked('Saving bucket', () => repository.upsertBucket(
       workspaceId: workspaceId,
       bucket: StrategyBucket(
         id: bucket.id,
@@ -249,18 +287,18 @@ class PickListController extends ChangeNotifier {
         updatedAt: DateTime.now(),
       ),
       actor: user,
-    );
+    ));
   }
 
   Future<void> removeTeamFromBucket(String workspaceId, String bucketId, String teamId) async {
     final user = this.user;
     if (user == null || !canEditBoard) return;
-    await repository.removeTeamFromBucket(
+    await _runTracked('Updating bucket', () => repository.removeTeamFromBucket(
       workspaceId: workspaceId,
       bucketId: bucketId,
       teamId: teamId,
       actor: user,
-    );
+    ));
   }
 
   Future<void> moveTeamBetweenBuckets(
@@ -271,19 +309,19 @@ class PickListController extends ChangeNotifier {
   ) async {
     final user = this.user;
     if (user == null || !canEditBoard) return;
-    await repository.moveTeamBetweenBuckets(
+    await _runTracked('Updating buckets', () => repository.moveTeamBetweenBuckets(
       workspaceId: workspaceId,
       sourceBucketId: sourceBucketId,
       destinationBucketId: destinationBucketId,
       teamId: teamId,
       actor: user,
-    );
+    ));
   }
 
   Future<void> reorderBucketTeams(String workspaceId, StrategyBucket bucket, List<String> orderedTeamIds) async {
     final user = this.user;
     if (user == null || !canEditBoard) return;
-    await repository.upsertBucket(
+    await _runTracked('Saving bucket', () => repository.upsertBucket(
       workspaceId: workspaceId,
       bucket: StrategyBucket(
         id: bucket.id,
@@ -294,24 +332,24 @@ class PickListController extends ChangeNotifier {
         updatedAt: DateTime.now(),
       ),
       actor: user,
-    );
+    ));
   }
 
   Future<void> updateAvailability(String workspaceId, String teamId, AvailabilityState availability) async {
     final user = this.user;
     if (user == null || !canEditBoard) return;
-    await repository.updateTeamAvailability(
+    await _runTracked('Saving availability', () => repository.updateTeamAvailability(
       workspaceId: workspaceId,
       teamId: teamId,
       availability: availability,
       actor: user,
-    );
+    ));
   }
 
   Future<void> addNote(String workspaceId, String teamId, String noteText) async {
     final user = this.user;
     if (user == null) return;
-    await repository.addNote(
+    await _runTracked('Saving note', () => repository.addNote(
       workspaceId: workspaceId,
       teamId: teamId,
       note: ScoutNote(
@@ -322,17 +360,17 @@ class PickListController extends ChangeNotifier {
         createdAt: DateTime.now(),
       ),
       actor: user,
-    );
+    ));
   }
 
   Future<void> addMember(String workspaceId, PickListUser member) async {
     final user = this.user;
     if (user == null || !canManageWorkspace) return;
-    await repository.addMember(
+    await _runTracked('Adding member', () => repository.addMember(
       workspaceId: workspaceId,
       member: member,
       actor: user,
-    );
+    ));
   }
 
   void _setBusy(bool value) {
